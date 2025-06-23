@@ -10,7 +10,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}",
-            "args": ["--newest-follower"],
+            "args": ["TekenV2", "--newest-follower"],
             "env": {},
             "showLog": true,
             "console": "integratedTerminal"
@@ -21,7 +21,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}",
-            "args": ["--newest-subscriber"],
+            "args": ["TekenV2", "--newest-subscriber"],
             "env": {},
             "showLog": true,
             "console": "integratedTerminal"
@@ -32,7 +32,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}",
-            "args": ["--bits-leaderboard"],
+            "args": ["TekenV2", "--bits-leaderboard"],
             "env": {},
             "showLog": true,
             "console": "integratedTerminal"
@@ -43,7 +43,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}",
-            "args": ["--newest-follower", "--newest-subscriber", "--bits-leaderboard"],
+            "args": ["TekenV2", "--newest-follower", "--newest-subscriber", "--bits-leaderboard"],
             "env": {},
             "showLog": true,
             "console": "integratedTerminal"
@@ -54,7 +54,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}",
-            "args": ["--newest-follower", "--refresh-interval", "5s"],
+            "args": ["TekenV2", "--newest-follower", "--refresh-interval", "5s"],
             "env": {},
             "showLog": true,
             "console": "integratedTerminal"
@@ -65,7 +65,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}",
-            "args": ["--help"],
+            "args": ["TekenV2", "--help"],
             "env": {},
             "showLog": true,
             "console": "integratedTerminal"

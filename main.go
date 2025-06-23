@@ -1,12 +1,9 @@
 package main
 
 import (
-	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,37 +12,97 @@ import (
 
 	"github.com/nicklaw5/helix/v2"
 	"github.com/spf13/viper"
+	"github.com/zalando/go-keyring"
 )
 
+const twitchScopes = "moderator:read:followers channel:read:subscriptions"
+
+func auth(client *helix.Client) (helix.AccessCredentials, error) {
+	device, err := client.GetDeviceCode(twitchScopes)
+	if err != nil {
+		slog.Error("Error getting device code", "error", err)
+		os.Exit(1)
+	}
+
+	if device.StatusCode != 200 {
+		slog.Error("Error getting device code", "error", device.ErrorMessage)
+		os.Exit(1)
+	}
+
+	now := time.Now()
+	expiresAt := now.Add(time.Duration(device.Data.ExpiresIn) * time.Second)
+
+	fmt.Println("Code: ", device.Data.UserCode)
+	fmt.Println("Authorization URL: ", device.Data.VerificationURI)
+	fmt.Println("Expires in: ", time.Duration(device.Data.ExpiresIn)*time.Second, " seconds")
+
+	ticker := time.NewTicker(time.Second)
+
+	for {
+		<-ticker.C
+		if time.Now().After(expiresAt) {
+			slog.Error("Device code expired")
+			os.Exit(1)
+		}
+
+		resp, err := client.RequestUserAccessTokenWithDeviceCode(device.Data.DeviceCode, twitchScopes)
+		if err != nil {
+			slog.Error("Error requesting user access token", "error", err)
+			os.Exit(1)
+		}
+
+		if resp.StatusCode == 400 && resp.ErrorMessage == "authorization_pending" {
+			continue
+		}
+
+		if resp.StatusCode != 200 {
+			slog.Error("Error requesting user access token", "error", resp.ErrorMessage)
+			os.Exit(1)
+		}
+
+		return resp.Data, nil
+	}
+}
+
 func main() {
+	if len(os.Args) == 0 {
+		fmt.Println("Usage: streamlabels <channel_name> [flags]")
+		os.Exit(0)
+	}
+
+	channelName := os.Args[1]
+
+	var f flag.FlagSet
+
 	subscribeToNewestFollower := false
-	flag.BoolVar(&subscribeToNewestFollower, "newest-follower", false, "subscribe to newest follower")
-	//flag.BoolVar(&subscribeToNewestFollower, "f", false, "subscribe to newest follower")
+	f.BoolVar(&subscribeToNewestFollower, "newest-follower", false, "subscribe to newest follower")
+	//f.BoolVar(&subscribeToNewestFollower, "f", false, "subscribe to newest follower")
 
 	subscribeToNewestSubscriber := false
-	flag.BoolVar(&subscribeToNewestSubscriber, "newest-subscriber", false, "subscribe to newest subscriber")
-	//flag.BoolVar(&subscribeToNewestSubscriber, "s", false, "subscribe to newest subscriber")
+	f.BoolVar(&subscribeToNewestSubscriber, "newest-subscriber", false, "subscribe to newest subscriber")
+	//f.BoolVar(&subscribeToNewestSubscriber, "s", false, "subscribe to newest subscriber")
 
 	subscribeToBitsLeaderboard := false
-	flag.BoolVar(&subscribeToBitsLeaderboard, "bits-leaderboard", false, "subscribe to bits leaderboard")
-	//flag.BoolVar(&subscribeToBitsLeaderboard, "b", false, "subscribe to bits leaderboard")
+	f.BoolVar(&subscribeToBitsLeaderboard, "bits-leaderboard", false, "subscribe to bits leaderboard")
+	//f.BoolVar(&subscribeToBitsLeaderboard, "b", false, "subscribe to bits leaderboard")
 
 	refreshInterval := 1 * time.Second
-	flag.DurationVar(&refreshInterval, "refresh-interval", 1*time.Second, "refresh interval")
-	//flag.DurationVar(&refreshInterval, "r", 1*time.Second, "refresh interval")
+	f.DurationVar(&refreshInterval, "refresh-interval", 1*time.Second, "refresh interval")
+	//f.DurationVar(&refreshInterval, "r", 1*time.Second, "refresh interval")
 
 	outputPath := ""
-	flag.StringVar(&outputPath, "output", "", "output directory")
-	//flag.StringVar(&outputPath, "o", "", "output directory")
+	f.StringVar(&outputPath, "output", "", "output directory")
+	//f.StringVar(&outputPath, "o", "", "output directory")
 
 	help := false
-	//flag.BoolVar(&help, "h", false, "show help")
-	flag.BoolVar(&help, "help", false, "show help")
+	f.BoolVar(&help, "help", false, "show help")
+	//f.BoolVar(&help, "h", false, "show help")
 
-	flag.Parse()
+	f.Parse(os.Args[2:])
 
 	if help {
-		flag.PrintDefaults()
+		fmt.Println("Usage: streamlabels <channel_name> [flags]")
+		f.PrintDefaults()
 		os.Exit(0)
 	}
 
@@ -71,58 +128,68 @@ func main() {
 	slog.Info("Config file was read successfully.")
 
 	client, err := helix.NewClient(&helix.Options{
-		ClientID:     viper.GetString("client_id"),
-		ClientSecret: viper.GetString("client_secret"),
-		RedirectURI:  "http://localhost:6789/callback",
+		ClientID: viper.GetString("client_id"),
 	})
 	if err != nil {
 		slog.Error("Error creating helix client", "error", err)
 		os.Exit(1)
 	}
 
-	authURL := client.GetAuthorizationURL(&helix.AuthorizationURLParams{
-		ResponseType: "code",
-		Scopes:       []string{"moderator:read:followers", "channel:read:subscriptions"},
-	})
-
-	tokenChan := make(chan string, 1)
-
-	server := http.Server{
-		Addr: ":6789",
-	}
-
-	http.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
-		tokenChan <- r.URL.Query().Get("code")
-		w.WriteHeader(http.StatusOK)
-	})
-	go server.ListenAndServe()
-
-	fmt.Println("Authorization URL: ", authURL)
-
-	code := <-tokenChan
-
-	if code == "" {
-		slog.Error("No code received")
+	accessToken, err := keyring.Get("streamlabels", "access_token")
+	if err != nil && err != keyring.ErrNotFound {
+		slog.Error("Error getting access token", "error", err)
 		os.Exit(1)
 	}
 
-	server.Shutdown(context.Background())
-
-	resp, err := client.RequestUserAccessToken(code)
-	if err != nil {
-		slog.Error("Error requesting user access token", "error", err)
+	refreshToken, err := keyring.Get("streamlabels", "refresh_token")
+	if err != nil && err != keyring.ErrNotFound {
+		slog.Error("Error getting refresh token", "error", err)
 		os.Exit(1)
 	}
 
-	if resp.StatusCode != 200 {
-		slog.Error("Error requesting user access token", "error", resp.ErrorMessage)
-		os.Exit(1)
+	var expiresAt time.Time
+	var accessCredentials helix.AccessCredentials
+	if accessToken != "" && refreshToken != "" {
+		client.SetUserAccessToken(accessToken)
+		client.SetRefreshToken(refreshToken)
+
+		resp, err := client.RefreshUserAccessToken(refreshToken)
+		if err != nil {
+			slog.Error("Error refreshing user access token", "error", err)
+			os.Exit(1)
+		}
+
+		if resp.StatusCode != 200 {
+			slog.Error("Error refreshing user access token", "error", resp.ErrorMessage)
+			os.Exit(1)
+		}
+
+		accessCredentials = resp.Data
+		client.SetUserAccessToken(accessCredentials.AccessToken)
+		client.SetRefreshToken(accessCredentials.RefreshToken)
+		keyring.Set("streamlabels", "access_token", accessCredentials.AccessToken)
+		keyring.Set("streamlabels", "refresh_token", accessCredentials.RefreshToken)
+		expiresAt = time.Now().Add(time.Duration(accessCredentials.ExpiresIn) * time.Second)
+	} else {
+		accessCredentials, err = auth(client)
+		if err != nil {
+			slog.Error("Error authenticating", "error", err)
+			os.Exit(1)
+		}
+
+		expiresAt = time.Now().Add(time.Duration(accessCredentials.ExpiresIn) * time.Second)
+
+		client.SetUserAccessToken(accessCredentials.AccessToken)
+		client.SetRefreshToken(accessCredentials.RefreshToken)
+
+		keyring.Set("streamlabels", "access_token", accessCredentials.AccessToken)
+		keyring.Set("streamlabels", "refresh_token", accessCredentials.RefreshToken)
 	}
 
-	client.SetUserAccessToken(resp.Data.AccessToken)
+	slog.Info("User access token and refresh token set")
 
 	info, err := client.GetUsers(&helix.UsersParams{
-		Logins: []string{viper.GetString("login")},
+		Logins: []string{channelName},
 	})
 	if err != nil {
 		slog.Error("Error getting channel information", "error", err)
@@ -138,14 +205,48 @@ func main() {
 
 	wg := &sync.WaitGroup{}
 
+	currentValues := map[string]string{
+		"newest_followers.txt":  "",
+		"newest_subscriber.txt": "",
+		"bits_leaderboard.txt":  "",
+	}
+
+	go func() {
+		for {
+			time.Sleep(time.Second)
+			if time.Now().After(expiresAt.Add(time.Minute * -10)) {
+				slog.Info("Access token expired, refreshing")
+
+				resp, err := client.RefreshUserAccessToken(accessCredentials.RefreshToken)
+				if err != nil {
+					slog.Error("Error refreshing user access token", "error", err)
+					os.Exit(1)
+				}
+
+				if resp.StatusCode != 200 {
+					slog.Error("Error refreshing user access token", "error", resp.ErrorMessage)
+					os.Exit(1)
+				}
+
+				accessCredentials = resp.Data
+				client.SetUserAccessToken(accessCredentials.AccessToken)
+				client.SetRefreshToken(accessCredentials.RefreshToken)
+				keyring.Set("streamlabels", "access_token", accessCredentials.AccessToken)
+				keyring.Set("streamlabels", "refresh_token", accessCredentials.RefreshToken)
+				expiresAt = time.Now().Add(time.Duration(accessCredentials.ExpiresIn) * time.Second)
+				slog.Info("Access token refreshed")
+			}
+		}
+	}()
+
 	if subscribeToNewestFollower {
-		go basicRunner(wg, client, refreshInterval, newestFollower, filepath.Join(outputPath, "newest_followers.txt"))
+		go basicRunner(wg, client, refreshInterval, newestFollower, filepath.Join(outputPath, "newest_followers.txt"), &currentValues)
 	}
 	if subscribeToNewestSubscriber {
-		go basicRunner(wg, client, refreshInterval, newestSubscriber, filepath.Join(outputPath, "newest_subscriber.txt"))
+		go basicRunner(wg, client, refreshInterval, newestSubscriber, filepath.Join(outputPath, "newest_subscriber.txt"), &currentValues)
 	}
 	if subscribeToBitsLeaderboard {
-		go basicRunner(wg, client, refreshInterval, bitsLeaderboard, filepath.Join(outputPath, "bits_leaderboard.txt"))
+		go basicRunner(wg, client, refreshInterval, bitsLeaderboard, filepath.Join(outputPath, "bits_leaderboard.txt"), &currentValues)
 	}
 
 	time.Sleep(refreshInterval)
@@ -156,7 +257,7 @@ func main() {
 
 var broadcasterID string
 
-func basicRunner(wg *sync.WaitGroup, client *helix.Client, duration time.Duration, runner func(*helix.Client) (string, error), fileName string) {
+func basicRunner(wg *sync.WaitGroup, client *helix.Client, duration time.Duration, runner func(*helix.Client) (string, error), fileName string, currentValues *map[string]string) {
 	wg.Add(1)
 	ticker := time.NewTicker(duration)
 
@@ -167,6 +268,12 @@ func basicRunner(wg *sync.WaitGroup, client *helix.Client, duration time.Duratio
 			slog.Error("Error getting text for file", "error", err, "fileName", fileName)
 			continue
 		}
+		if _, ok := (*currentValues)[fileName]; ok {
+			if (*currentValues)[fileName] != text {
+				slog.Info("File has changed", "fileName", fileName, "value", text)
+			}
+		}
+		(*currentValues)[fileName] = text
 		err = os.WriteFile(fileName, []byte(text), 0644)
 		if err != nil {
 			slog.Error("Error writing file", "error", err, "fileName", fileName)
@@ -190,7 +297,7 @@ func newestFollower(client *helix.Client) (string, error) {
 		return follow.Username, nil
 	}
 
-	return "", errors.New("no new follower found")
+	return "", nil
 }
 
 func newestSubscriber(client *helix.Client) (string, error) {
@@ -207,7 +314,7 @@ func newestSubscriber(client *helix.Client) (string, error) {
 		return sub.UserName, nil
 	}
 
-	return "", errors.New("no new subscriber found")
+	return "", nil
 }
 
 func bitsLeaderboard(client *helix.Client) (string, error) {
