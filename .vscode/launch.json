@@ -70,5 +70,16 @@
             "showLog": true,
             "console": "integratedTerminal"
         }
+        {
+            "name": "Debug - Blank",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}",
+            "args": [],
+            "env": {},
+            "showLog": true,
+            "console": "integratedTerminal"
+        }
     ]
 }

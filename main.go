@@ -65,7 +65,7 @@ func auth(client *helix.Client) (helix.AccessCredentials, error) {
 }
 
 func main() {
-	if len(os.Args) == 0 {
+	if len(os.Args) < 2 {
 		fmt.Println("Usage: streamlabels <channel_name> [flags]")
 		os.Exit(0)
 	}
