@@ -59,7 +59,14 @@ jobs:
           CGO_ENABLED: 0
         run: |
           go build -ldflags="-s -w" -o ${{ matrix.artifact_name }} .
-          ls -la ${{ matrix.artifact_name }}
+        
+      - name: List built artifact (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: ls -la ${{ matrix.artifact_name }}
+
+      - name: List built artifact (Windows)
+        if: runner.os == 'Windows'
+        run: Get-ChildItem ${{ matrix.artifact_name }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
