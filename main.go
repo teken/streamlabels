@@ -65,13 +65,6 @@ func auth(client *helix.Client) (helix.AccessCredentials, error) {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: streamlabels <channel_name> [flags]")
-		os.Exit(0)
-	}
-
-	channelName := os.Args[1]
-
 	var f flag.FlagSet
 
 	subscribeToNewestFollower := false
@@ -101,6 +94,14 @@ func main() {
 	help := false
 	f.BoolVar(&help, "help", false, "show help")
 	//f.BoolVar(&help, "h", false, "show help")
+
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: streamlabels <channel_name> [flags]")
+		f.PrintDefaults()
+		os.Exit(0)
+	}
+
+	channelName := os.Args[1]
 
 	f.Parse(os.Args[2:])
 
