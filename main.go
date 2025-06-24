@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/nicklaw5/helix/v2"
-	"github.com/spf13/viper"
 	"github.com/zalando/go-keyring"
 )
 
 const twitchScopes = "moderator:read:followers channel:read:subscriptions"
+const twitchClientID = "guf16ba4jxcwzh5zuxdh03uhmap8lr"
 
 func auth(client *helix.Client) (helix.AccessCredentials, error) {
 	device, err := client.GetDeviceCode(twitchScopes)
@@ -90,6 +90,10 @@ func main() {
 	f.DurationVar(&refreshInterval, "refresh-interval", 1*time.Second, "refresh interval")
 	//f.DurationVar(&refreshInterval, "r", 1*time.Second, "refresh interval")
 
+	logout := false
+	f.BoolVar(&logout, "logout", false, "logout")
+	//f.BoolVar(&logout, "l", false, "logout")
+
 	outputPath := ""
 	f.StringVar(&outputPath, "output", "", "output directory")
 	//f.StringVar(&outputPath, "o", "", "output directory")
@@ -106,29 +110,20 @@ func main() {
 		os.Exit(0)
 	}
 
+	if logout {
+		keyring.Delete("streamlabels", "access_token")
+		keyring.Delete("streamlabels", "refresh_token")
+		os.Exit(0)
+	}
+
 	if !subscribeToNewestFollower && !subscribeToNewestSubscriber && !subscribeToBitsLeaderboard {
 		slog.Error("No subscription requested")
 		flag.PrintDefaults()
 		os.Exit(0)
 	}
 
-	viper.SetConfigName("config")
-	viper.SetConfigType("toml")
-	viper.AddConfigPath("/etc/streamlabels")
-	viper.AddConfigPath("$HOME/.config/streamlabels")
-	viper.AddConfigPath(".")
-
-	viper.AutomaticEnv()
-	err := viper.ReadInConfig()
-	if err != nil {
-		slog.Error("Fatal error config file", "error", err)
-		os.Exit(1)
-	}
-
-	slog.Info("Config file was read successfully.")
-
 	client, err := helix.NewClient(&helix.Options{
-		ClientID: viper.GetString("client_id"),
+		ClientID: twitchClientID,
 	})
 	if err != nil {
 		slog.Error("Error creating helix client", "error", err)

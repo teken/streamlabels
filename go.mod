@@ -9,11 +9,9 @@ require (
 	github.com/danieljoos/wincred v1.2.2 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/golang-jwt/jwt/v4 v4.0.0 // indirect
-	github.com/gorilla/websocket v1.4.2 // indirect
 )
 
 require (
-	github.com/adeithe/go-twitch v0.3.1
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/nicklaw5/helix/v2 v2.31.1
@@ -32,4 +30,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/nicklaw5/helix/v2 => ../helix
+replace github.com/nicklaw5/helix/v2 => github.com/teken/helix/v2 v2.0.0-20250623203002-aa95b712b4d6
