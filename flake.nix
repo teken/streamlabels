@@ -11,7 +11,6 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         
-      
         streamlabels = pkgs.buildGoModule {
           pname = "streamlabels";
           version = "1.0.0";
@@ -19,7 +18,7 @@
           
           vendorHash = "sha256-eZQe8gstzj9BxjuZiXV1UFnuzjICJBFjiTpJNGFiyFI=";
           
-          CGO_ENABLED = "0";
+          env.CGO_ENABLED = "0";
           ldflags = [ "-s" "-w" ];
           
           meta = with pkgs.lib; {
@@ -39,11 +38,19 @@
         apps.default = {
           type = "app";
           program = "${streamlabels}/bin/streamlabels";
-        };
-
-        # Overlay for easy installation
-        overlays.default = final: prev: {
-          streamlabels = streamlabels;
+          meta = with pkgs.lib; {
+            mainProgram = "streamlabels";
+            description = "A small go app to get basic stream labels for twitch";
+            longDescription = ''
+              A simple Go program to generate text files containing Twitch stream information like newest followers, subscribers, and bits leaderboard.
+              These files can then be used as sources in OBS Studio or other streaming software.
+            '';
+            homepage = "https://github.com/teken/streamlabels";
+            license = lib.licenses.gpl3Plus;
+            maintainers = with lib.maintainers; [
+              teken
+            ];
+          };
         };
       }
     );
